@@ -5,11 +5,12 @@ import ij.ImagePlus;
 import ij.plugin.filter.PlugInFilter;
 import ij.process.ImageProcessor;
 import ij.process.ByteProcessor;
-
+import java.util.Random;
 
 public class Tubular implements PlugInFilter {
 	private int numOfProbes = 100;
 	private String title;
+	private int numOfWindows = 3; /*the number will be squared*/
 
 	public int setup(String arg, ImagePlus im) 
 	{
@@ -74,8 +75,8 @@ public class Tubular implements PlugInFilter {
 			}
 		}
 
-		ImagePlus histImg = new ImagePlus(String.format("My histogram of %s ", title), histIp);
-		histImg.show();
+		/*ImagePlus histImg = new ImagePlus(String.format("My histogram of %s ", title), histIp);
+		histImg.show();*/
 		IJ.error("percentage: "+percentage+" count: "+total+" till index: "+idx);
 		ImageProcessor c = ip.duplicate();
 		for (int i = 0; i <count ;i++){
@@ -83,8 +84,43 @@ public class Tubular implements PlugInFilter {
 				c.set(i,0);
 			}
 		}
+		/*kind of wiev for a development purposes only*/
+		/*begin*/
 		ImagePlus changedPicture = new ImagePlus(String.format("My backgound change of %s ", title), c);
 		changedPicture.show();
+		/*end*/
+		//int[] res = PlantProbes(ip);
+		cropImage(ip);
 	}	
 
+	private int[] PlantProbes(ImageProcessor ip){
+		int[] result = new int[256]; 
+		int width = ip.getWidth();
+		int height = ip.getHeight();
+		Random rnd = new Random();
+		int posx,posy;
+		for (int i = 0 ; i< numOfProbes;i++){
+			posx = rnd.nextInt(width+1);
+			posy = rnd.nextInt(height+1);
+			result[ip.get(pos)]++;  
+		}
+
+		/*not supported yet*/
+		return result;
+	}
+
+	private void cropImage(ImageProcessor ip){
+		int cropWidth = ip.getWidth() / numOfWindows;
+		int cropHeight = ip.getHeight() / numOfWindows;
+		ImageProcessor cropped;
+		for (int i = 0; i < numOfWindows; i++){
+			for (int j = 0; j<numOfWindows;j++){
+				ip.setRoi(cropWidth * i, cropHeight * j, cropWidth, cropHeight);
+				cropped = ip.crop();
+				int[] = PlantProbes(cropped);
+				new ImagePlus("croppedImage" + i +" " + j, cropped).show();
+			}
+		}
+
+	}
 }
