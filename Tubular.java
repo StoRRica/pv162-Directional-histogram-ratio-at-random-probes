@@ -114,6 +114,7 @@ public class Tubular implements PlugInFilter {
 
 		return result;
 	}
+
 	/* 0 is left middle, 1 is left upper, 2 is upper, 3 is right upper, 4 is right middle, 5 is right down, 6 is down, 7 is left down*/
 	private int[] dNeighbours(ImageProcessor ip, int x, int y, int distance){
 		int[] result = new int[8];
@@ -151,6 +152,7 @@ public class Tubular implements PlugInFilter {
 	private void cropImage(ImageProcessor ip){
 		int cropWidth = ip.getWidth() / numOfWindows;
 		int cropHeight = ip.getHeight() / numOfWindows;
+		double lower,upper;
 		int[] res;
 		int[] minMax;
 		float Dr;
@@ -163,7 +165,12 @@ public class Tubular implements PlugInFilter {
 				res= PlantProbes(cropped);
 				minMax = getMinMax(res);
 				Dr = minMax[1] / minMax[0];
-				new ImagePlus("croppedImage" + i +" " + j + " Dr :" + Dr, cropped).show();
+				ImagePlus otsu = new ImagePlus("Pokus", cropped);
+				IJ.setAutoThreshold(otsu,"Otsu dark");
+        		lower = otsu.getChannelProcessor().getMinThreshold();
+        		upper = otsu.getChannelProcessor().getMaxThreshold();
+        		otsu.getChannelProcessor().resetThreshold();
+				new ImagePlus("croppedImage" + i +" " + j + " Dr :" + Dr + " lower: " + lower +" upper: "+upper, cropped).show();
 			}
 		}
 
