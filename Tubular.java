@@ -10,8 +10,8 @@ import java.util.Random;
 public class Tubular implements PlugInFilter {
 	private int numOfProbes = 100;
 	private String title;
-	private int numOfWindows = 3; /*the number will be squared*/
-	private int dNeighboursDistance = 4; /*length od the d-neighobour distance*/
+	private int numOfWindows =8; /*the number will be squared*/
+	private int dNeighboursDistance = 6; /*length od the d-neighobour distance*/
 
 	public int setup(String arg, ImagePlus im) 
 	{
@@ -47,9 +47,9 @@ public class Tubular implements PlugInFilter {
 		int histMax = hist[0];
 		for (int i = 1; i < hist.length; ++i)
 		{
-			if (hist[i] > histMax)
+			if (hist[i] > 0)
 			{
-				histMax = hist[i];
+				histMax = i;
 			}
 		}
 
@@ -59,39 +59,26 @@ public class Tubular implements PlugInFilter {
 			return;
 		}
 
-		int start = 0;
-		int idx = 0;
-		int total = 0;
 		int percentage = histMax / 5;
-		for (int i = 0; i < hist.length; ++i)
-		{
-			start = histImgHeight - (int)((double) hist[i] / histMax * histImgHeight);
-			if (total < percentage){
-				total += hist[i];
-				idx = i;
-			}
-			for (int y = start; y < histImgHeight; ++y)
-			{
-				histIp.set(i, y, 0);	
-			}
-		}
-
-		/*ImagePlus histImg = new ImagePlus(String.format("My histogram of %s ", title), histIp);
-		histImg.show();*/
-		IJ.error("percentage: "+percentage+" count: "+total+" till index: "+idx);
+		int total = 0;	
+		
 		ImageProcessor c = ip.duplicate();
 		for (int i = 0; i <count ;i++){
-			if (c.get(i) < idx){
+			if (c.get(i) < percentage){
 				c.set(i,0);
+				total++;
 			}
 		}
+		IJ.error("till idx: "+percentage+" number of changed pixels: "+total);
 		/*kind of wiev for a development purposes only*/
 		/*begin*/
 		ImagePlus changedPicture = new ImagePlus(String.format("My backgound change of %s ", title), c);
 		changedPicture.show();
 		/*end*/
 		//int[] res = PlantProbes(ip);
-		cropImage(ip);
+		ImageProcessor afterTreshold = cropImage(c);
+		ImagePlus treshold = new ImagePlus(String.format("My treshold change of %s ", title), afterTreshold);
+		treshold.show();
 	}	
 
 	private int[] PlantProbes(ImageProcessor ip){
@@ -145,17 +132,20 @@ public class Tubular implements PlugInFilter {
 			if (input[i]<min){min = input[i];}
 			if (input[i]>max){max = input[i];}
 		}
+		if (min == 0){min = 1;}
 		int[] res={min,max};
 		return res;
 	}
 
-	private void cropImage(ImageProcessor ip){
+	private ImageProcessor cropImage(ImageProcessor ip){
 		int cropWidth = ip.getWidth() / numOfWindows;
 		int cropHeight = ip.getHeight() / numOfWindows;
 		double lower,upper;
 		int[] res;
 		int[] minMax;
 		float Dr;
+		ImageProcessor result;
+		result = ip.duplicate();
 		ImageProcessor cropped;
 		for (int i = 0; i < numOfWindows; i++){
 			for (int j = 0; j<numOfWindows;j++){
@@ -170,9 +160,25 @@ public class Tubular implements PlugInFilter {
         		lower = otsu.getChannelProcessor().getMinThreshold();
         		upper = otsu.getChannelProcessor().getMaxThreshold();
         		otsu.getChannelProcessor().resetThreshold();
-				new ImagePlus("croppedImage" + i +" " + j + " Dr :" + Dr + " lower: " + lower +" upper: "+upper, cropped).show();
+        		if (Dr > 2 ){
+        			otsu = makeTreshold(upper,otsu);
+        		}else{
+        			otsu = makeTreshold(lower,otsu);
+        		} 
+        		/*0 to copy over the pixels in  result*/
+        		result.copyBits(cropped,cropWidth * i, cropHeight * j,0);
+				//new ImagePlus("croppedImage" + i +" " + j + " Dr :" + Dr + " lower: " + lower +" upper: "+upper, cropped).show();
 			}
 		}
+		return result;
+	}
 
+	private ImagePlus makeTreshold(double treshold, ImagePlus imp){
+		ImageProcessor ip = imp.getChannelProcessor();
+		for (int i = 0; i < ip.getPixelCount();i++){
+			ip.set( i , ip.get(i)<treshold ? 0 : 255);
+		}
+		ip.autoThreshold();
+		return imp;
 	}
 }
