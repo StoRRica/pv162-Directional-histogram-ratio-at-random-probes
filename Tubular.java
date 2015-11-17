@@ -38,28 +38,24 @@ public class Tubular implements PlugInFilter {
 		int[] hist = ip.getHistogram();
 		int count = ip.getPixelCount();
 
-		// show the intensity histogram as a new image
-		int histImgHeight = 130;
-		ImageProcessor histIp = new ByteProcessor(hist.length, histImgHeight);
-		histIp.setValue(255);
-		histIp.fill();
 		
-		int histMax = hist[0];
+		/**/	
+		int idx = 0;
 		for (int i = 1; i < hist.length; ++i)
 		{
 			if (hist[i] > 0)
 			{
-				histMax = i;
+				idx = i;
 			}
 		}
 
-		if (histMax == 0)
+		if (idx == 0)
 		{
 			IJ.error("Empty histogram!");
 			return;
 		}
 
-		int percentage = histMax / 5;
+		int percentage = idx / 100 * 5;
 		int total = 0;	
 		
 		ImageProcessor c = ip.duplicate();
@@ -136,7 +132,8 @@ public class Tubular implements PlugInFilter {
 		int[] res={min,max};
 		return res;
 	}
-
+	/*mena premennych a funkcii pomenit*/
+	/*interpolacie prahov, pozriet a dorobit*/
 	private ImageProcessor cropImage(ImageProcessor ip){
 		int cropWidth = ip.getWidth() / numOfWindows;
 		int cropHeight = ip.getHeight() / numOfWindows;
@@ -152,7 +149,7 @@ public class Tubular implements PlugInFilter {
 				ip.setRoi(cropWidth * i, cropHeight * j, cropWidth, cropHeight);
 				cropped = ip.crop();
 				res = new int[8];
-				res= PlantProbes(cropped);
+				res = PlantProbes(cropped);
 				minMax = getMinMax(res);
 				Dr = minMax[1] / minMax[0];
 				ImagePlus otsu = new ImagePlus("Pokus", cropped);
@@ -160,14 +157,16 @@ public class Tubular implements PlugInFilter {
         		lower = otsu.getChannelProcessor().getMinThreshold();
         		upper = otsu.getChannelProcessor().getMaxThreshold();
         		otsu.getChannelProcessor().resetThreshold();
+        		double myOtsu = otsu(cropped.getHistogram() /*hist*/,cropped.getPixelCount());
+        		/*pozriet tie levely na otsu*/
         		if (Dr > 2 ){
-        			otsu = makeTreshold(upper,otsu);
-        		}else{
         			otsu = makeTreshold(lower,otsu);
+        		}else{
+        			otsu = makeTreshold(upper,otsu);
         		} 
         		/*0 to copy over the pixels in  result*/
         		result.copyBits(cropped,cropWidth * i, cropHeight * j,0);
-				//new ImagePlus("croppedImage" + i +" " + j + " Dr :" + Dr + " lower: " + lower +" upper: "+upper, cropped).show();
+				//new ImagePlus("croppedImage" + i +" " + j + " Dr :" + Dr + " lower: " + lower +" upper: "+upper + " myOtsu: "+myOtsu, cropped).show();
 			}
 		}
 		return result;
@@ -181,4 +180,39 @@ public class Tubular implements PlugInFilter {
 		ip.autoThreshold();
 		return imp;
 	}
+
+	private double otsu(int[] histogram, int total) {
+    int sum = 0;
+    for (int i = 1; i < 256; ++i)
+        sum += i * histogram[i];
+    int sumB = 0;
+    int wB = 0;
+    int wF = 0;
+    double mB;
+    double mF;
+    double max = 0.0;
+    double between = 0.0;
+    double threshold1 = 0.0;
+    double threshold2 = 0.0;
+    for (int i = 0; i < 256; ++i) {
+        wB += histogram[i];
+        if (wB == 0)
+            continue;
+        wF = total - wB;
+        if (wF == 0)
+            break;
+        sumB += i * histogram[i];
+        mB = sumB / wB;
+        mF = (sum - sumB) / wF;
+        between = wB * wF * (mB - mF) * (mB - mF);
+        if ( between >= max ) {
+            threshold1 = i;
+            if ( between > max ) {
+                threshold2 = i;
+            }
+            max = between;            
+        }
+    }
+    return (( threshold1 + threshold2 ) / 2.0);
+}
 }
