@@ -10,7 +10,7 @@ import java.util.Random;
 public class Tubular implements PlugInFilter {
 	private int numOfProbes = 100;
 	private String title;
-	private int numOfWindows =8; /*the number will be squared*/
+	private int numOfWindows =10; /*the number will be squared*/
 	private int dNeighboursDistance = 6; /*length od the d-neighobour distance*/
 
 	public int setup(String arg, ImagePlus im) 
@@ -32,7 +32,10 @@ public class Tubular implements PlugInFilter {
 		}
 	}
 
-	
+	class ImageWithTreshold{
+		ImageProcessor procesor;
+		int treshold;
+	}
 
 	public void run(ImageProcessor ip) {
 		int[] hist = ip.getHistogram();
@@ -55,7 +58,7 @@ public class Tubular implements PlugInFilter {
 			return;
 		}
 
-		int percentage = idx / 100 * 5;
+		int percentage = idx / 5;
 		int total = 0;	
 		
 		ImageProcessor c = ip.duplicate();
@@ -72,8 +75,8 @@ public class Tubular implements PlugInFilter {
 		changedPicture.show();
 		/*end*/
 		//int[] res = PlantProbes(ip);
-		ImageProcessor afterTreshold = cropImage(c);
-		ImagePlus treshold = new ImagePlus(String.format("My treshold change of %s ", title), afterTreshold);
+		ImageWithTreshold afterTreshold = cropImage(c);
+		ImagePlus treshold = new ImagePlus(String.format("My treshold change of %s ", title), afterTreshold.procesor);
 		treshold.show();
 	}	
 
@@ -82,16 +85,21 @@ public class Tubular implements PlugInFilter {
 		int[] tmp;
 		int width = ip.getWidth();
 		int height = ip.getHeight();
+		int tries = 0;
 		Random rnd = new Random();
 		int posx,posy;
 		for (int i = 0 ; i< numOfProbes;i++){
+			tries = 0;
 			do {
 				posx = rnd.nextInt(width);
-			    posy = rnd.nextInt(height);} 
-			while( ip.get(posx,posy) == 0);
-			tmp = dNeighbours(ip,posx,posy,dNeighboursDistance);
-			for (int j = 0; j<8;j++){
-				result[j]+=tmp[j];
+			    posy = rnd.nextInt(height);
+				tries++;} 
+			while( (ip.get(posx,posy) == 0)||( tries < 150));
+			if (ip.get(posx,posy) != 0){
+				tmp = dNeighbours(ip,posx,posy,dNeighboursDistance);
+				for (int j = 0; j<8;j++){
+					result[j]+=tmp[j];
+				}
 			}
 		}
 
@@ -134,16 +142,18 @@ public class Tubular implements PlugInFilter {
 	}
 	/*mena premennych a funkcii pomenit*/
 	/*interpolacie prahov, pozriet a dorobit*/
-	private ImageProcessor cropImage(ImageProcessor ip){
+	private ImageWithTreshold cropImage(ImageProcessor ip){
 		int cropWidth = ip.getWidth() / numOfWindows;
 		int cropHeight = ip.getHeight() / numOfWindows;
 		double lower,upper;
 		int[] res;
 		int[] minMax;
+		int[][] tresholds = new int[numOfWindows][numOfWindows];
 		float Dr;
 		ImageProcessor result;
 		result = ip.duplicate();
 		ImageProcessor cropped;
+		ImageWithTreshold returnValue = new ImageWithTreshold();
 		for (int i = 0; i < numOfWindows; i++){
 			for (int j = 0; j<numOfWindows;j++){
 				ip.setRoi(cropWidth * i, cropHeight * j, cropWidth, cropHeight);
@@ -157,22 +167,124 @@ public class Tubular implements PlugInFilter {
         		lower = otsu.getChannelProcessor().getMinThreshold();
         		upper = otsu.getChannelProcessor().getMaxThreshold();
         		otsu.getChannelProcessor().resetThreshold();
-        		double myOtsu = otsu(cropped.getHistogram() /*hist*/,cropped.getPixelCount());
+        		int[] myOtsu = otsuMulti(cropped.getHistogram() /*hist*/,cropped.getPixelCount());
         		/*pozriet tie levely na otsu*/
         		if (Dr > 2 ){
-        			otsu = makeTreshold(lower,otsu);
+        			otsu = makeTreshold(myOtsu[0],otsu);
+        			returnValue.treshold = myOtsu[0];
         		}else{
-        			otsu = makeTreshold(upper,otsu);
+        			otsu = makeTreshold(myOtsu[1],otsu);
+        			returnValue.treshold = myOtsu[0];
         		} 
+        		tresholds[i][j] = returnValue.treshold;
         		/*0 to copy over the pixels in  result*/
         		result.copyBits(cropped,cropWidth * i, cropHeight * j,0);
-				//new ImagePlus("croppedImage" + i +" " + j + " Dr :" + Dr + " lower: " + lower +" upper: "+upper + " myOtsu: "+myOtsu, cropped).show();
+				//new ImagePlus("croppedImage" + i +" " + j + " Dr :" + Dr + " lower: " + myOtsu[0] +" upper: "+myOtsu[1] , cropped).show();
 			}
 		}
-		return result;
+		
+		returnValue.procesor = result;
+		//ImageProcessor afterInterpolation = doInterpolation(tresholds,ip);
+		return returnValue;
 	}
 
+
+	/*
+	R1 = ((x2 – x)/(x2 – x1))*Q11 + ((x – x1)/(x2 – x1))*Q21
+
+	R2 = ((x2 – x)/(x2 – x1))*Q12 + ((x – x1)/(x2 – x1))*Q22
+
+	After the two R values are calculated, the value of P can finally be calculated by a weighted average of R1 and R2.
+
+	P = ((y2 – y)/(y2 – y1))*R1 + ((y – y1)/(y2 – y1))*R2
+	*/
+
+	private ImageProcessor doInterpolation(int[][] values, ImageProcessor ip){
+		int cropWidth = ip.getWidth() / numOfWindows;
+		int crwh = cropWidth / 2 ;//polovica crop width
+		int cropHeight = ip.getHeight() / numOfWindows;
+		int crhh = cropHeight / 2 ;
+		int x,y,w,h;
+		int tre1,tre2,tre3,tre4,x1,x2,y1,y2;
+		for (int i = 0; i<ip.getWidth();i++){
+			w = i - crwh;
+			w = w<0?0:w;
+			x = w / cropWidth;
+			for (int j = 0; j<ip.getHeight();j++){
+				h = j - crhh;
+				h = h<0?0:h;
+				y = h / cropWidth;
+				x1 = x * cropWidth + crwh;
+				x2 = x1 + cropWidth;
+				y2 = y * cropHeight + crhh;
+				y1 = y2 + cropHeight;
+				if ((x == numOfWindows)||(y==numOfWindows)){
+					if (x == numOfWindows){
+						x1 = ip.getWidth() - crwh ;
+						x2 = ip.getWidth();
+						tre2 = values[x][y];
+						tre1 = tre2;
+						if (y == numOfWindows){
+							y1 = ip.getHeight();
+							y2 = y1 - crhh;
+							tre3 = tre2; 
+						} else{
+							tre3 = values[x][y+1];
+						}
+						tre4 = tre3;
+					}else{
+						y1 = ip.getHeight();
+						y2 = y1 - crhh;							
+						if (i < crwh){
+							x1 = 0;
+							x2 = crwh;
+							tre1 = values[0][y];
+							tre2=tre1;
+							tre3=tre1;
+							tre4=tre1;
+						}else{
+							tre1 = values[x][y];
+							tre2 = values[x+1][y];
+							tre3 = tre1;
+							tre4 = tre2;
+						}
+					}
+				}else{
+					tre1 = values[x][y];
+					tre2 = values[x+1][y];
+					tre3 = values[x][y+1];
+					tre4 = values[x+1][y+1];
+					if (i<crwh){
+						tre3 = tre4;
+						tre1 = tre2;
+						x1 = 0;
+						x2 = crwh;
+					}
+
+					if (j < crhh){
+						tre3 = tre1;
+						tre4 = tre2;
+						y2 = 0;
+						y1 = crhh; 
+					}
+				}
+				int tresholdResult = interpolateBilinear(i,j,x1,y1,tre1,x2,y2,tre2,tre3,tre4);
+				ip.set(i, j, ip.get(i,j)<tresholdResult?0:255);
+			}
+		}
+		ip.autoThreshold();
+		return ip;
+	}
+
+	private int interpolateBilinear(int x, int y, int x1, int y1, int tre1, int x2, int y2, int tre2, int tre3, int tre4){
+		double R1 = ((x2 - x)/(x2 - x1))*tre3 + ((x - x1)/(x2 - x1))*tre4;
+		double R2 = ((x2 - x)/(x2 - x1))*tre1 + ((x - x1)/(x2 - x1))*tre2;
+		double res = ((y2 - y)/(y2 - y1))*R1 + ((y - y1)/(y2 - y1))*R2;
+		return (int)res;
+ 	}
+
 	private ImagePlus makeTreshold(double treshold, ImagePlus imp){
+		if (treshold == 0){treshold = 1;}
 		ImageProcessor ip = imp.getChannelProcessor();
 		for (int i = 0; i < ip.getPixelCount();i++){
 			ip.set( i , ip.get(i)<treshold ? 0 : 255);
@@ -181,38 +293,58 @@ public class Tubular implements PlugInFilter {
 		return imp;
 	}
 
-	private double otsu(int[] histogram, int total) {
-    int sum = 0;
-    for (int i = 1; i < 256; ++i)
-        sum += i * histogram[i];
-    int sumB = 0;
-    int wB = 0;
-    int wF = 0;
-    double mB;
-    double mF;
-    double max = 0.0;
-    double between = 0.0;
-    double threshold1 = 0.0;
-    double threshold2 = 0.0;
-    for (int i = 0; i < 256; ++i) {
-        wB += histogram[i];
-        if (wB == 0)
-            continue;
-        wF = total - wB;
-        if (wF == 0)
-            break;
-        sumB += i * histogram[i];
-        mB = sumB / wB;
-        mF = (sum - sumB) / wF;
-        between = wB * wF * (mB - mF) * (mB - mF);
-        if ( between >= max ) {
-            threshold1 = i;
-            if ( between > max ) {
-                threshold2 = i;
-            }
-            max = between;            
-        }
-    }
-    return (( threshold1 + threshold2 ) / 2.0);
-}
+	
+	int[] otsuMulti(int[] histogram, int total) {
+    	int N = total;
+
+       	double W0K, W1K, W2K, M0, M1, M2, currVarB, optimalThresh1, optimalThresh2, maxBetweenVar, M0K, M1K, M2K, MT;
+
+	    optimalThresh1 = 0;
+	    optimalThresh2 = 0;
+
+	    W0K = 0;
+	    W1K = 0;
+
+	    M0K = 0;
+	    M1K = 0;
+
+	    MT = 0;
+	    maxBetweenVar = 0;
+	    for (int k = 0; k <= 255; k++) {
+	        MT += k * (histogram[k] / (double) N);
+	    }
+
+
+	    for (int t1 = 0; t1 <= 255; t1++) {
+	        W0K += histogram[t1] / (double) N; //Pi
+	        M0K += t1 * (histogram[t1] / (double) N); //i * Pi
+	        M0 = M0K / W0K; //(i * Pi)/Pi
+
+	        W1K = 0;
+	        M1K = 0;
+
+	        for (int t2 = t1 + 1; t2 <= 255; t2++) {
+	            W1K += histogram[t2] / (double) N; //Pi
+	            M1K += t2 * (histogram[t2] / (double) N); //i * Pi
+	            M1 = M1K / W1K; //(i * Pi)/Pi
+
+	            W2K = 1 - (W0K + W1K);
+	            M2K = MT - (M0K + M1K);
+
+	            if (W2K <= 0) break;
+
+	            M2 = M2K / W2K;
+
+	            currVarB = W0K * (M0 - MT) * (M0 - MT) + W1K * (M1 - MT) * (M1 - MT) + W2K * (M2 - MT) * (M2 - MT);
+
+	            if (maxBetweenVar < currVarB) {
+	                maxBetweenVar = currVarB;
+	                optimalThresh1 = t1;
+	                optimalThresh2 = t2;
+	            }
+	        }
+	    }
+	    int[] result = {(int)optimalThresh1, (int)optimalThresh2};
+	    return result;
+	}
 }
