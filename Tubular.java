@@ -10,8 +10,8 @@ import java.util.Random;
 public class Tubular implements PlugInFilter {
 	private int numOfProbes = 100;
 	private String title;
-	private int numOfWindows =10; /*the number will be squared*/
-	private int dNeighboursDistance = 6; /*length od the d-neighobour distance*/
+	private int numOfWindows =15; /*the number will be squared*/
+	private int dNeighboursDistance = 4; /*length od the d-neighobour distance*/
 
 	public int setup(String arg, ImagePlus im) 
 	{
@@ -34,7 +34,7 @@ public class Tubular implements PlugInFilter {
 
 	class ImageWithTreshold{
 		ImageProcessor procesor;
-		int treshold;
+		int[][] treshold;
 	}
 
 	public void run(ImageProcessor ip) {
@@ -58,9 +58,9 @@ public class Tubular implements PlugInFilter {
 			return;
 		}
 
-		int percentage = idx / 5;
+		int percentage =idx *5/100 ;
 		int total = 0;	
-		
+		int[] myOtsu = otsuMulti(ip.getHistogram() /*hist*/,ip.getPixelCount());
 		ImageProcessor c = ip.duplicate();
 		for (int i = 0; i <count ;i++){
 			if (c.get(i) < percentage){
@@ -68,14 +68,14 @@ public class Tubular implements PlugInFilter {
 				total++;
 			}
 		}
-		IJ.error("till idx: "+percentage+" number of changed pixels: "+total);
+		//IJ.error("till idx: "+percentage+" number of changed pixels: "+total);
 		/*kind of wiev for a development purposes only*/
 		/*begin*/
 		ImagePlus changedPicture = new ImagePlus(String.format("My backgound change of %s ", title), c);
 		changedPicture.show();
 		/*end*/
 		//int[] res = PlantProbes(ip);
-		ImageWithTreshold afterTreshold = cropImage(c);
+		ImageWithTreshold afterTreshold = executeCroping(c,myOtsu);
 		ImagePlus treshold = new ImagePlus(String.format("My treshold change of %s ", title), afterTreshold.procesor);
 		treshold.show();
 	}	
@@ -142,68 +142,94 @@ public class Tubular implements PlugInFilter {
 	}
 	/*mena premennych a funkcii pomenit*/
 	/*interpolacie prahov, pozriet a dorobit*/
-	private ImageWithTreshold cropImage(ImageProcessor ip){
+	private ImageWithTreshold executeCroping(ImageProcessor ip, int[] otsuTresholds){
 		int cropWidth = ip.getWidth() / numOfWindows;
 		int cropHeight = ip.getHeight() / numOfWindows;
 		double lower,upper;
 		int[] res;
 		int[] minMax;
-		int[][] tresholds = new int[numOfWindows][numOfWindows];
-		float Dr;
+		/*int[][] tresholds = new int[numOfWindows][];
+		for (int i =0; i < numOfWindows;i++){
+			tresholds[i] = new int[numOfWindows];
+		}*/
+		int[] myOtsu = otsuTresholds;
+		double Dr;
 		ImageProcessor result;
 		result = ip.duplicate();
 		ImageProcessor cropped;
 		ImageWithTreshold returnValue = new ImageWithTreshold();
+		returnValue.treshold = new int[numOfWindows][];
+		for (int i =0; i< numOfWindows;i++){
+			returnValue.treshold[i] = new int[numOfWindows];
+		}
+		ImageProcessor tresholdsImage = ip.duplicate();
+		ImageProcessor upperLower = ip.duplicate();
+		ImageProcessor cropped1;
+
 		for (int i = 0; i < numOfWindows; i++){
 			for (int j = 0; j<numOfWindows;j++){
 				ip.setRoi(cropWidth * i, cropHeight * j, cropWidth, cropHeight);
 				cropped = ip.crop();
+				cropped1 = cropped.duplicate();
 				res = new int[8];
 				res = PlantProbes(cropped);
 				minMax = getMinMax(res);
-				Dr = minMax[1] / minMax[0];
+				Dr = (double)minMax[1] / (double)minMax[0];
 				ImagePlus otsu = new ImagePlus("Pokus", cropped);
 				IJ.setAutoThreshold(otsu,"Otsu dark");
         		lower = otsu.getChannelProcessor().getMinThreshold();
         		upper = otsu.getChannelProcessor().getMaxThreshold();
         		otsu.getChannelProcessor().resetThreshold();
-        		int[] myOtsu = otsuMulti(cropped.getHistogram() /*hist*/,cropped.getPixelCount());
+        		
         		/*pozriet tie levely na otsu*/
+
         		if (Dr > 2 ){
-        			otsu = makeTreshold(myOtsu[0],otsu);
-        			returnValue.treshold = myOtsu[0];
-        		}else{
         			otsu = makeTreshold(myOtsu[1],otsu);
-        			returnValue.treshold = myOtsu[0];
+        			//tresholds[i][j] = myOtsu[0];
+        			returnValue.treshold[i][j]=myOtsu[1];
+        			cropped1 = tresholdImage(cropped1, 255);
+        		}else{
+        			otsu = makeTreshold(myOtsu[0],otsu);
+        			//tresholds[i][j] = myOtsu[1];
+        			returnValue.treshold[i][j] = myOtsu[0];
+        			cropped1 = tresholdImage(cropped1, 0);
         		} 
-        		tresholds[i][j] = returnValue.treshold;
+
+        		//IJ.error("onkno wid: "+i*cropWidth+" hei: "+j*cropHeight+"prahy nizs:"+myOtsu[0]+", vyssi: "+myOtsu[1]+", vybrany: "+returnValue.treshold[i][j]);
+        		//IJ.error("Treshold for window "+i+" , "+j+" : "+returnValue.treshold[i][j]);
         		/*0 to copy over the pixels in  result*/
         		result.copyBits(cropped,cropWidth * i, cropHeight * j,0);
+        		cropped = tresholdImage(cropped,returnValue.treshold[i][j]);
+        		tresholdsImage.copyBits(cropped,cropWidth * i, cropHeight * j,0);
+        		upperLower.copyBits(cropped1,cropWidth * i, cropHeight * j,0);
 				//new ImagePlus("croppedImage" + i +" " + j + " Dr :" + Dr + " lower: " + myOtsu[0] +" upper: "+myOtsu[1] , cropped).show();
 			}
+						
 		}
 		
 		returnValue.procesor = result;
-		//ImageProcessor afterInterpolation = doInterpolation(tresholds,ip);
+		/*ImageProcessor afterInterpolation = doInterpolation(returnValue.treshold,ip);
+		ImagePlus treshold = new ImagePlus(String.format("My bilinear interpolation treshold change of %s ", title), afterInterpolation);
+		treshold.show();*/
+		ImagePlus imageOfTresholds = new ImagePlus(String.format("My tresholds of %s ", title), tresholdsImage);
+		imageOfTresholds.show();
+		ImagePlus imageOfTresholds1 = new ImagePlus(String.format("upper lower treholds of %s ", title), upperLower);
+		imageOfTresholds1.show();	
 		return returnValue;
 	}
 
-
-	/*
-	R1 = ((x2 – x)/(x2 – x1))*Q11 + ((x – x1)/(x2 – x1))*Q21
-
-	R2 = ((x2 – x)/(x2 – x1))*Q12 + ((x – x1)/(x2 – x1))*Q22
-
-	After the two R values are calculated, the value of P can finally be calculated by a weighted average of R1 and R2.
-
-	P = ((y2 – y)/(y2 – y1))*R1 + ((y – y1)/(y2 – y1))*R2
-	*/
+	private ImageProcessor tresholdImage(ImageProcessor ip, int value){
+		for (int i = 0; i < ip.getPixelCount();i++){
+			ip.set(i,value);
+		}
+		return ip;
+	}
 
 	private ImageProcessor doInterpolation(int[][] values, ImageProcessor ip){
 		int cropWidth = ip.getWidth() / numOfWindows;
 		int crwh = cropWidth / 2 ;//polovica crop width
 		int cropHeight = ip.getHeight() / numOfWindows;
-		int crhh = cropHeight / 2 ;
+		int crhh = cropHeight / 2 ; //polovica cropHeight
 		int x,y,w,h;
 		int tre1,tre2,tre3,tre4,x1,x2,y1,y2;
 		for (int i = 0; i<ip.getWidth();i++){
@@ -218,8 +244,8 @@ public class Tubular implements PlugInFilter {
 				x2 = x1 + cropWidth;
 				y2 = y * cropHeight + crhh;
 				y1 = y2 + cropHeight;
-				if ((x == numOfWindows)||(y==numOfWindows)){
-					if (x == numOfWindows){
+				if ((x == numOfWindows-1)||(y==numOfWindows-1)){
+					if (x == numOfWindows-1){
 						x1 = ip.getWidth() - crwh ;
 						x2 = ip.getWidth();
 						tre2 = values[x][y];
@@ -268,23 +294,34 @@ public class Tubular implements PlugInFilter {
 						y1 = crhh; 
 					}
 				}
-				int tresholdResult = interpolateBilinear(i,j,x1,y1,tre1,x2,y2,tre2,tre3,tre4);
-				ip.set(i, j, ip.get(i,j)<tresholdResult?0:255);
+				double tresholdResult = interpolateBilinear(i,j,x1,y1,tre1,x2,y2,tre2,tre3,tre4);
+				ip.set(i, j, ip.get(i,j) < tresholdResult?0:255);
 			}
 		}
-		ip.autoThreshold();
+		//ip.autoThreshold();
 		return ip;
 	}
 
-	private int interpolateBilinear(int x, int y, int x1, int y1, int tre1, int x2, int y2, int tre2, int tre3, int tre4){
-		double R1 = ((x2 - x)/(x2 - x1))*tre3 + ((x - x1)/(x2 - x1))*tre4;
-		double R2 = ((x2 - x)/(x2 - x1))*tre1 + ((x - x1)/(x2 - x1))*tre2;
+	/*
+	R1 = ((x2 – x)/(x2 – x1))*Q11 + ((x – x1)/(x2 – x1))*Q21
+
+	R2 = ((x2 – x)/(x2 – x1))*Q12 + ((x – x1)/(x2 – x1))*Q22
+
+	After the two R values are calculated, the value of P can finally be calculated by a weighted average of R1 and R2.
+
+	P = ((y2 – y)/(y2 – y1))*R1 + ((y – y1)/(y2 – y1))*R2
+	*/
+
+	private double interpolateBilinear(int x, int y, int x1, int y1, int tre1, int x2, int y2, int tre2, int tre3, int tre4){
+		double R1 = ((x2 - x)/(x2 - x1))*tre1 + ((x - x1)/(x2 - x1))*tre2;
+		double R2 = ((x2 - x)/(x2 - x1))*tre3 + ((x - x1)/(x2 - x1))*tre4;
 		double res = ((y2 - y)/(y2 - y1))*R1 + ((y - y1)/(y2 - y1))*R2;
-		return (int)res;
+		return res;
  	}
 
 	private ImagePlus makeTreshold(double treshold, ImagePlus imp){
 		if (treshold == 0){treshold = 1;}
+		//IJ.error("Treshold : "+treshold);
 		ImageProcessor ip = imp.getChannelProcessor();
 		for (int i = 0; i < ip.getPixelCount();i++){
 			ip.set( i , ip.get(i)<treshold ? 0 : 255);
