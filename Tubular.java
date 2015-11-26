@@ -229,7 +229,7 @@ public class Tubular implements PlugInFilter {
 		return ip;
 	}
 
-	private ImageProcessor doInterpolation(int[][] values, ImageProcessor ip){
+	/*private ImageProcessor doInterpolation(int[][] values, ImageProcessor ip){
 		int cropWidth = ip.getWidth() / numOfWindows;
 		int crwh = cropWidth / 2 ;//polovica crop width
 		int cropHeight = ip.getHeight() / numOfWindows;
@@ -305,6 +305,32 @@ public class Tubular implements PlugInFilter {
 
 		}
 		//ip.autoThreshold();
+		return ip;
+	}*/
+
+	public ImageProcessor doInterpolation(int[][] values, ImageProcessor ip){
+		int cropWidth = ip.getWidth() / numOfWindows;
+		int crwh = cropWidth / 2 ;//polovica crop width
+		int cropHeight = ip.getHeight() / numOfWindows;
+		int crhh = cropHeight / 2 ; //polovica cropHeight
+		int x,y,w,h;
+		int tre1,tre2,tre3,tre4,x1,x2,y1,y2;
+		for (int i = crwh;i < ip.getWidth()-crwh ;i++ ) {
+			x = i / cropWidth;
+			for (int j = crhh; i < ip.getHeight()-crhh ; j++) {
+				y = j / cropWidth;
+				x1 = x * cropWidth + crwh;
+				x2 = x1 + cropWidth;
+				y2 = y * cropHeight + crhh;
+				y1 = y2 + cropHeight;
+				tre1 = values[x][y];
+					tre2 = values[x+1][y];
+					tre3 = values[x][y+1];
+					tre4 = values[x+1][y+1];
+				double tresholdResult = interpolateBilinear(i,j,x1,y1,tre1,x2,y2,tre2,tre3,tre4);
+				ip.set(i, j, ip.get(i,j) < tresholdResult?0:255);
+			}
+		}
 		return ip;
 	}
 
