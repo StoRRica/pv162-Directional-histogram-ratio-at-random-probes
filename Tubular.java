@@ -6,12 +6,16 @@ import ij.plugin.filter.PlugInFilter;
 import ij.process.ImageProcessor;
 import ij.process.ByteProcessor;
 import java.util.Random;
+//import projekt.OriginalPaperOtsuMethod;
+//import projekt.TresholdValues;
 
 public class Tubular implements PlugInFilter {
 	private int numOfProbes = 100;
 	private String title;
 	private int numOfWindows =15; /*the number will be squared*/
 	private int dNeighboursDistance = 4; /*length od the d-neighobour distance*/
+
+	//TresholdValues getTresholdValues = new OriginalPaperOtsuMethod();
 
 	public int setup(String arg, ImagePlus im) 
 	{
@@ -60,7 +64,7 @@ public class Tubular implements PlugInFilter {
 
 		int percentage =idx *5/100 ;
 		int total = 0;	
-		int[] myOtsu = otsuMulti(ip.getHistogram() /*hist*/,ip.getPixelCount());
+		int[] myOtsu = multiOtsu(ip.getHistogram() ,ip.getPixelCount()); //getTresholdValues.getTresholds(ip.getHistogram() ,ip.getPixelCount());
 		ImageProcessor c = ip.duplicate();
 		for (int i = 0; i <count ;i++){
 			if (c.get(i) < percentage){
@@ -148,10 +152,10 @@ public class Tubular implements PlugInFilter {
 		double lower,upper;
 		int[] res;
 		int[] minMax;
-		/*int[][] tresholds = new int[numOfWindows][];
+		int[][] tresholds = new int[numOfWindows][];
 		for (int i =0; i < numOfWindows;i++){
 			tresholds[i] = new int[numOfWindows];
-		}*/
+		}
 		int[] myOtsu = otsuTresholds;
 		double Dr;
 		ImageProcessor result;
@@ -185,18 +189,16 @@ public class Tubular implements PlugInFilter {
 
         		if (Dr > 2 ){
         			otsu = makeTreshold(myOtsu[1],otsu);
-        			//tresholds[i][j] = myOtsu[0];
+        			tresholds[i][j] = myOtsu[1];
         			returnValue.treshold[i][j]=myOtsu[1];
         			cropped1 = tresholdImage(cropped1, 255);
         		}else{
         			otsu = makeTreshold(myOtsu[0],otsu);
-        			//tresholds[i][j] = myOtsu[1];
+        			tresholds[i][j] = myOtsu[0];
         			returnValue.treshold[i][j] = myOtsu[0];
         			cropped1 = tresholdImage(cropped1, 0);
         		} 
 
-        		//IJ.error("onkno wid: "+i*cropWidth+" hei: "+j*cropHeight+"prahy nizs:"+myOtsu[0]+", vyssi: "+myOtsu[1]+", vybrany: "+returnValue.treshold[i][j]);
-        		//IJ.error("Treshold for window "+i+" , "+j+" : "+returnValue.treshold[i][j]);
         		/*0 to copy over the pixels in  result*/
         		result.copyBits(cropped,cropWidth * i, cropHeight * j,0);
         		cropped = tresholdImage(cropped,returnValue.treshold[i][j]);
@@ -208,13 +210,15 @@ public class Tubular implements PlugInFilter {
 		}
 		
 		returnValue.procesor = result;
-		/*ImageProcessor afterInterpolation = doInterpolation(returnValue.treshold,ip);
-		ImagePlus treshold = new ImagePlus(String.format("My bilinear interpolation treshold change of %s ", title), afterInterpolation);
-		treshold.show();*/
+
 		ImagePlus imageOfTresholds = new ImagePlus(String.format("My tresholds of %s ", title), tresholdsImage);
 		imageOfTresholds.show();
 		ImagePlus imageOfTresholds1 = new ImagePlus(String.format("upper lower treholds of %s ", title), upperLower);
 		imageOfTresholds1.show();	
+		ImageProcessor interpolationImage = ip.duplicate();
+		//doInterpolation(tresholds, interpolationImage);
+		ImagePlus imageOfTresholds2 = new ImagePlus(String.format("billinear interpolation of %s ", title), interpolationImage);
+		imageOfTresholds2.show();
 		return returnValue;
 	}
 
@@ -233,29 +237,40 @@ public class Tubular implements PlugInFilter {
 		int x,y,w,h;
 		int tre1,tre2,tre3,tre4,x1,x2,y1,y2;
 		for (int i = 0; i<ip.getWidth();i++){
-			w = i - crwh;
-			w = w<0?0:w;
-			x = w / cropWidth;
+			//w = i;
+			//w = w<0?0:w;
+			x = i / cropWidth;
 			for (int j = 0; j<ip.getHeight();j++){
-				h = j - crhh;
-				h = h<0?0:h;
-				y = h / cropWidth;
+				//h = j;
+				//h = h<0?0:h;
+				y = j / cropWidth;
 				x1 = x * cropWidth + crwh;
 				x2 = x1 + cropWidth;
 				y2 = y * cropHeight + crhh;
 				y1 = y2 + cropHeight;
-				if ((x == numOfWindows-1)||(y==numOfWindows-1)){
-					if (x == numOfWindows-1){
+				
+				if ((x >= numOfWindows-2)||(y>=numOfWindows-2)){
+					if (x >= numOfWindows-2){
 						x1 = ip.getWidth() - crwh ;
 						x2 = ip.getWidth();
-						tre2 = values[x][y];
+						if (x < numOfWindows && y<numOfWindows){
+							tre2 = values[x][y];
+						}else if (x < numOfWindows){
+							tre2 = values[x][numOfWindows-1];
+						}else if (y < numOfWindows){
+							tre2 = values[numOfWindows -1][y];
+						}else{
+							tre2 = values[numOfWindows-1][numOfWindows-1];
+						}
+						
 						tre1 = tre2;
-						if (y == numOfWindows){
+						if (y >= numOfWindows-2){
 							y1 = ip.getHeight();
 							y2 = y1 - crhh;
 							tre3 = tre2; 
 						} else{
-							tre3 = values[x][y+1];
+							//tre3 = values[x][y+1];
+							tre3 = 10;//just for a while
 						}
 						tre4 = tre3;
 					}else{
@@ -280,23 +295,14 @@ public class Tubular implements PlugInFilter {
 					tre2 = values[x+1][y];
 					tre3 = values[x][y+1];
 					tre4 = values[x+1][y+1];
-					if (i<crwh){
-						tre3 = tre4;
-						tre1 = tre2;
-						x1 = 0;
-						x2 = crwh;
-					}
-
-					if (j < crhh){
-						tre3 = tre1;
-						tre4 = tre2;
-						y2 = 0;
-						y1 = crhh; 
-					}
+					
+					
 				}
 				double tresholdResult = interpolateBilinear(i,j,x1,y1,tre1,x2,y2,tre2,tre3,tre4);
 				ip.set(i, j, ip.get(i,j) < tresholdResult?0:255);
+			
 			}
+
 		}
 		//ip.autoThreshold();
 		return ip;
@@ -330,9 +336,8 @@ public class Tubular implements PlugInFilter {
 		return imp;
 	}
 
-	
-	int[] otsuMulti(int[] histogram, int total) {
-    	int N = total;
+	public int[] multiOtsu(int[] histogram,int countOfPixels){
+		int N = countOfPixels;
 
        	double W0K, W1K, W2K, M0, M1, M2, currVarB, optimalThresh1, optimalThresh2, maxBetweenVar, M0K, M1K, M2K, MT;
 
@@ -384,4 +389,5 @@ public class Tubular implements PlugInFilter {
 	    int[] result = {(int)optimalThresh1, (int)optimalThresh2};
 	    return result;
 	}
+	
 }
