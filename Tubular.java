@@ -265,7 +265,7 @@ public class Tubular implements PlugInFilter {
 				tre12 = values[x][y];
 				tre21 = values[x+1][y+1];
 				tre22 = values[x+1][y];
-				double tresholdResult = interpolateBilinear(i,j,x1,y2,tre11,x2,y1,tre12,tre21,tre22);
+				double tresholdResult = interpolateBilinear(i,j,x1,y2,tre12,x2,y1,tre22,tre11,tre21);
 				interpolatedTresholds.set(i,j,(int)tresholdResult);
 				ip.set(i, j, ip.get(i,j) < tresholdResult?0:255);
 			}
